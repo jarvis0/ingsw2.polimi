@@ -70,6 +70,13 @@ fact {
 	//no reservation for issued cars
 	all r: Reservation | (no r.car.notifications & (TechicalIssue + AlmostEmptyBatteryIssue))
 
+	//no reservation without user
+	all r: Reservation | (one u: User | r = u.activeReservation)
+
+	//ride iff user and car are at the same position
+	all r: Reservation | (one u: User | (lone ri: Ride | (r = u.activeReservation and r.car.position = u.position implies r.ride = ri)))
+
+	#Ride > 0
 	#Reservation > 0
 	#Position > 0
 	#Text >= 2
@@ -81,10 +88,11 @@ sig Position {
 }
 
 sig User {
+	position: Position,
 	pendingInformation: Bool,
 	personalInformation: PersonalInformation,
 	paymentInformation: PaymentInformation,
-	reservations: Reservation
+	activeReservation: lone Reservation
 }
 
 sig PersonalInformation {
@@ -98,18 +106,14 @@ sig PaymentInformation {
 }
 
 sig Reservation {
-//	reservationTime: Time,
-//	doorsUnlockTime: lone Time,
-	passengersNumber: Int,
 	car: Car,
 	ride: lone Ride
-} {
-	passengersNumber >= 1 and passengersNumber <= 5
 }
 
 sig Ride {
-	//doorsLockTime: Time,
-	//engineStartTime: Time
+	passengersNumber: Int,
+} {
+	passengersNumber >= 1 and passengersNumber <= 5
 }
 
 pred show {
