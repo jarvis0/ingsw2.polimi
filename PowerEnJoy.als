@@ -1,25 +1,11 @@
-open util/boolean
-open util/ordering[Time] as times
-
 sig Text {
 }
 
-sig LatitudePosition {
-}
-
-sig LongitudePosition {
-}
-
-sig Time {
-}
-
 sig Car {
-	available: Bool,
-	position: Position,
-	charging: Bool,
+	location: Location,
 	cumulativeNotifications: set CumulativeNotification,
 	almostEmptyBattery: lone AlmostEmptyBatteryIssue,
-	redistributionNeeded: lone CarsRedistributionNeeded
+	redistributionNeeded: lone CarRedistributionNeeded
 }
 
 abstract sig Notification {
@@ -38,7 +24,7 @@ sig MinorIssue extends CumulativeNotification {
 sig AlmostEmptyBatteryIssue extends Notification {
 }
 
-sig CarsRedistributionNeeded extends Notification {
+sig CarRedistributionNeeded extends Notification {
 }
 
 fact {
@@ -46,19 +32,14 @@ fact {
 	//each notification is related to the corresponding car and the car has the set of his notifications
 	all c: Car, n: CumulativeNotification | (n in c.cumulativeNotifications and c = n.car) or (n not in c.cumulativeNotifications and c != n.car)
 
-	//each almost empty battery issue is related to the corresponding car and the car has his almost empty battery issue
+	//each almost empty  issue is related to the corresponding car and the car has his almost empty battery issue
 	all c: Car, empty: AlmostEmptyBatteryIssue | (c.almostEmptyBattery = empty and empty.car = c) or (c.almostEmptyBattery != empty and empty.car != c)
 
-	all c: Car, r: CarsRedistributionNeeded | (c.redistributionNeeded = r and r.car = c) or (c.redistributionNeeded != r and r.car != c)
-
 	// each redistribution needed notification is related to exactly one car
-//	all c: Car, r: CarsRedistributionNeeded | c.redistributionNeeded = r and r.car = c
+	all c: Car, r: CarRedistributionNeeded | (c.redistributionNeeded = r and r.car = c) or (c.redistributionNeeded != r and r.car != c)
 
-	//no car with same position
-	no c1, c2: Car | c1 != c2 and c1.position = c2.position
-
-	//no latitude and langitude without position and no position with the same latitude and longitude
-	all lat: LatitudePosition, lon: LongitudePosition | (one p: Position | p.latitude = lat and p.longitude = lon)
+	//no car with same location
+	no c1, c2: Car | c1 != c2 and c1.location = c2.location
 
 	//no user cannot have personal information and no user with the same personal information
 	all personalInfo: PersonalInformation | (one u: User | u.personalInformation = personalInfo)
@@ -72,26 +53,42 @@ fact {
 	//no ride without reservation and no ride of the same reservation
 	all r: Ride | (one res: Reservation | res.ride = r)
 
-	//two reservations have different car
+	//two reservations have different cars
 	no r1, r2: Reservation, c: Car | r1 != r2 and r1.car = c and r2.car = c
 
-	//no reservation for issued cars
-//	all r: Reservation | ((no (r.car.cumulativeNotifications & TechnicalIssue))/* and (r.car.almostEmptyBattery not in AlmostEmptyBatteryIssue)*/)
+	//no reservation for technical issued cars
+	all t: TechnicalIssue | (all r: Reservation | t not in r.car.cumulativeNotifications)
+
+	//no reservation for almost empty battery cars
+	all empty: AlmostEmptyBatteryIssue | (all r: Reservation | empty != r.car.almostEmptyBattery)
 
 	//no reservation without user and no user with the same active reservation
 	all r: Reservation | (one u: User | r = u.activeReservation)
 
-	//riding cars are at the same position of the driver
-	all ri: Ride | (one r: Reservation | (one u: User | (r = u.activeReservation and r.car.position = u.position and r.ride = ri)))
+	//riding cars are at the same location of the driver
+	all ri: Ride | (one r: Reservation | (one u: User | r = u.activeReservation and r.car.location = u.location and r.ride = ri))
 
-	//a car which is not in a ride cannot be out of a safe parking area
-//	all r: Reservation | (one p: SafeParkingArea | no r.ride implies r.car.position = p.position)
+	//riding cars have not cars redistribution needed issue
+	all redistrib: CarRedistributionNeeded | (all r: Reservation | redistrib != r.car.redistributionNeeded)
 
-	#Car > 3
-	#CarsRedistributionNeeded > 1
-	#CumulativeNotification > 1
-	#AlmostEmptyBatteryIssue > 1
-	#Position > 0
+	//no safe parking area in the same location
+	no park1, park2: SafeParkingArea | park1 != park2 and park1.location = park2.location
+
+	//two safe parking areas has different cars
+	no park1, park2: SafeParkingArea, c: Car | park1 != park2 and c in park1.cars and c in park2.cars
+
+	//a car in a safe parking area have the same location
+	no park: SafeParkingArea, c: Car | c not in park.cars and park.location = c.location
+
+	//a car which is not in a ride cannot be out of a safe parking area ****************
+	
+	//two users have two different invoices
+
+	#Ride > 0
+	#SafeParkingArea = 4
+	#Reservation = 2
+	#Car > 0
+	#Location > 0
 	#Text >= 2
 }
 
@@ -116,7 +113,7 @@ assert noUsersWithSameUsername {
 //check noUsersWithSameUsername
 
 assert noCarsWithSamePosition {
-	all c1, c2: Car | c1 != c2 <=> c1.position != c2.position
+	all c1, c2: Car | c1 != c2 <=> c1.location != c2.location
 }
 //check noCarsWithSamePosition
 
@@ -126,21 +123,24 @@ assert noReservationForSameCars {
 //check noReservationForSameCars
 
 assert noRideIffUserAndCarAtSamePosition {
-	all u: User | (lone r: Reservation | (lone ri: Ride | (r = u.activeReservation and r.car.position = u.position <=> r.ride = ri)))
+	all u: User | (lone r: Reservation | (lone ri: Ride | (r = u.activeReservation and r.car.location = u.location <=> r.ride = ri)))
 }
 //check noRideIffUserAndCarAtSamePosition
 
-sig Position {
-	latitude: LatitudePosition,
-	longitude: LongitudePosition
+/*assert noRedistributionNeededForReservedCar {
+	all r: Reservation | (one c: Car | (r.car = c implies c.redistributionNeeded not in CarRedistributionNeeded))
+}does not work***************************
+check noRedistributionNeededForReservedCar*/
+
+sig Location {
 }
 
 sig User {
-	position: Position,
-	pendingInformation: Bool,
+	location: Location,
 	personalInformation: PersonalInformation,
 	paymentInformation: PaymentInformation,
-	activeReservation: lone Reservation
+	activeReservation: lone Reservation,
+	invoices: set Invoice
 }
 
 sig PersonalInformation {
@@ -164,12 +164,18 @@ sig Ride {
 	passengersNumber >= 1 and passengersNumber <= 5
 }
 
-/*sig SafeParkingArea {
-	position: Position,
-	car: set Car
-}*/
+sig SafeParkingArea {
+	location: Location,
+	cars: set Car
+}
+
+sig SpecialParkingArea extends SafeParkingArea {
+}
+
+sig Invoice {
+}
 
 pred show {
 }
 
-run show for 6
+run show for 4
