@@ -119,7 +119,7 @@ fact {
 	//no user cannot have personal information and no user with the same personal information
 	all personalInfo: PersonalInformation | (one u: User | u.personalInformation = personalInfo)
 
-	//no user cannot have payment information*************** some <> one
+	//no user cannot have payment information
 	all paymentInfo: PaymentInformation | (one u: User | u.paymentInformation = paymentInfo)
 
 	//no ride without reservation and no ride of the same reservation
@@ -152,9 +152,9 @@ fact {
 	//a car in a safe parking area have the same area
 	no c1, c2: Car, park: SafeParkingArea | (c1 in park.cars and c2 in park.cars) and not (c1.area = c2.area and c1.area = park.area)
 
-	//a car which is not in a ride must be in a safe parking area ****************
+	//a car which is not in a ride must be in a safe parking area
 	all c: Car, r: Reservation | no (r.ride & Ride) and r.car = c => c in SafeParkingArea.cars
-	all c: Car | (one r: Reservation | r.car != c => c in SafeParkingArea.cars)
+	all c: Car | no (c & Reservation.car) => c in SafeParkingArea.cars
 
 	//two users have two different invoices
 	no u1, u2: User, i: Invoice | u1 != u2 and i in u1.invoices and i in u2.invoices
@@ -195,21 +195,21 @@ fact {
 	//all notifications are sent to all operators
 	all o: Operator | o.notifications = Notification
 
-	//no locations without users or cars or safe parking areas
-//	all l: Location | (one u: User, c: Car, park: SafeParkingArea | u.location = l or c.location = l or park.location = l)
+	//no positions without users or cars
+	User.position + Car.position = Position
 
-	#Ride = 4
+	//no areas without cars or parking areas
+	Car.area + SafeParkingArea.area = Area
+
+	#Ride = 1
 	#Operator = 0
 	#User > 0
-	#Invoice > 0
-	#Fee > 0
-	#Discount > 0
-	#Reservation = 4
+	#Reservation = 1
 	#Car = 2
-	#SafeParkingArea = 1
-	#SpecialParkingArea = 0
+	#SafeParkingArea = 2
+	#SpecialParkingArea = 2
 	#Position > 0
-	#Area > 1
+	#Area > 0
 }
 
 assert noSameAlmostEmptyBatteryIssues {
