@@ -105,13 +105,16 @@ sig Operator {
 fact {
 
 	//each notification is related to the corresponding car and the car has the set of his notifications
-	all c: Car, n: CumulativeNotification | (n in c.cumulativeNotifications and c = n.car) or (n not in c.cumulativeNotifications and c != n.car)
+	all c: Car, n: CumulativeNotification | (n in c.cumulativeNotifications and c = n.car)
+		or (n not in c.cumulativeNotifications and c != n.car)
 
 	//each almost empty  issue is related to the corresponding car and the car has his almost empty battery issue
-	all c: Car, empty: AlmostEmptyBatteryIssue | (c.almostEmptyBattery = empty and empty.car = c) or (c.almostEmptyBattery != empty and empty.car != c)
+	all c: Car, empty: AlmostEmptyBatteryIssue | (c.almostEmptyBattery = empty and empty.car = c)
+		or (c.almostEmptyBattery != empty and empty.car != c)
 
 	// each redistribution needed notification is related to exactly one car
-	all c: Car, r: CarRedistributionNeeded | (c.redistributionNeeded = r and r.car = c) or (c.redistributionNeeded != r and r.car != c)
+	all c: Car, r: CarRedistributionNeeded | (c.redistributionNeeded = r and r.car = c)
+		or (c.redistributionNeeded != r and r.car != c)
 
 	//no car with same position
 	no c1, c2: Car | c1 != c2 and c1.position = c2.position
@@ -150,11 +153,12 @@ fact {
 	no park1, park2: SafeParkingArea, c: Car | park1 != park2 and c in park1.cars and c in park2.cars
 
 	//a car in a safe parking area have the same area
-	no c1, c2: Car, park: SafeParkingArea | (c1 in park.cars and c2 in park.cars) and not (c1.area = c2.area and c1.area = park.area)
+	no c1, c2: Car, park: SafeParkingArea | (c1 in park.cars and c2 in park.cars)
+		and not (c1.area = c2.area and c1.area = park.area)
 
 	//a car which is not in a ride must be in a safe parking area
 	all c: Car, r: Reservation | no (r.ride & Ride) and r.car = c => c in SafeParkingArea.cars
-	all c: Car | no (c & Reservation.car) => c in SafeParkingArea.cars
+	all c: Car | no (c & Reservation.car) implies c in SafeParkingArea.cars
 
 	//two users have two different invoices
 	no u1, u2: User, i: Invoice | u1 != u2 and i in u1.invoices and i in u2.invoices
@@ -178,7 +182,8 @@ fact {
 	all i: Invoice | #(AFee & i.fees) <= 1 and #(BFee & i.fees) <= 1 and #(CFee & i.fees) <= 1
 
 	//no same type of discount in the same invoice
-	all i: Invoice | #(ADiscount & i.discounts) <= 1 and #(BDiscount & i.discounts) <= 1 and #(CDiscount & i.discounts) <= 1
+	all i: Invoice | #(ADiscount & i.discounts) <= 1 and #(BDiscount & i.discounts) <= 1
+		and #(CDiscount & i.discounts) <= 1
 
 	//minor issue only if reservation or invoice for that user
 	all m: MinorIssue | m.user.activeReservation.car = m.car or m.user.invoices != none
@@ -201,53 +206,123 @@ fact {
 	//no areas without cars or parking areas
 	Car.area + SafeParkingArea.area = Area
 
-	#Ride = 1
+}
+
+assert makingReservation {
+	all u, u': User, r: Reservation | u.activeReservation = none and makeReservation[u, u', r]
+		implies u'.activeReservation = r
+}
+check makingReservation
+
+assert endingReservation {
+	all u, u': User, r: Reservation, i: Invoice | u.activeReservation = r and i not in u.invoices and endReservation[u, u', r, i]
+		implies u'.activeReservation = none and u'.activeReservation.ride = none and i in u'.invoices
+}
+check endingReservation
+
+assert startingRide {
+	all u, u': User, r: Reservation, ri: Ride | u.activeReservation = r and u.activeReservation.ride = none and startRide[u, u', r, ri]
+		implies u'.activeReservation.ride = ri
+}
+check startingRide
+
+assert endingRide {
+	all u, u': User, r: Reservation, i: Invoice, ri: Ride | u.activeReservation = r and u.activeReservation.ride = ri and endRide[u, u', r, ri, i]
+		implies u'.activeReservation.ride = none and endReservation[u, u', r, i]
+}
+check endingRide
+
+assert reportingMinorIssue {
+	all u: User, c, c': Car, m: MinorIssue |
+		u.activeReservation.car = c and m not in c.cumulativeNotifications and reportMinorIssue[c, c', m] implies
+			m in c'.cumulativeNotifications and m in Operator.notifications
+}
+check reportingMinorIssue
+
+assert applyingBFee {
+	all i, i': Invoice, b: BFee, u, u': User, r: Reservation, c: Car, ri: Ride |
+		u.activeReservation = r and u.activeReservation.ride = ri and i not in u.invoices and endRide[u, u', r, ri, i] 
+		and r.car = c and c.almostEmptyBattery in AlmostEmptyBatteryIssue and applyBFee[i, i', b]
+			implies b in i'.fees
+}
+check applyingBFee
+
+assert applyingADiscount {
+	all i, i': Invoice, a: ADiscount, u, u':User, r: Reservation, ri: Ride | u.activeReservation = r
+		and u.activeReservation.ride = ri and i not in u.invoices and endRide[u, u', r, ri, i]
+		and r.ride.passengersNumber >= 3 and applyADiscount[i, i', a]
+			implies a in i'.discounts
+}
+check applyingADiscount
+
+assert applyingCDiscount {
+	all i, i': Invoice, c: CDiscount, u, u': User, r: Reservation, ri: Ride, park: SpecialParkingArea |
+		u.activeReservation = r and u.activeReservation.ride = ri and i not in u.invoices
+		and endRide[u, u', r, ri, i] and r.car in park.cars and applyCDiscount[i, i', c]
+			implies c in i'.discounts
+}
+check applyingCDiscount
+
+pred makeReservation(u, u': User, r: Reservation) {
+	u'.activeReservation = u.activeReservation + r
+}
+run makeReservation for 3
+
+pred endReservation(u, u': User, r: Reservation, i: Invoice) {
+	u'.activeReservation = u.activeReservation - r
+	u'.invoices = u.invoices + i
+}
+run endReservation for 3
+
+pred startRide(u, u': User, r: Reservation, ri: Ride) {
+	u'.activeReservation.ride = u.activeReservation.ride + ri
+}
+run startRide for 3
+
+pred endRide(u, u': User, r: Reservation, ri: Ride, i: Invoice) {
+	u'.activeReservation.ride = u.activeReservation.ride - ri
+	endReservation[u, u', r, i]
+}
+run endRide for 3
+
+pred reportMinorIssue(c, c': Car, m: MinorIssue) {
+	c'.cumulativeNotifications = c.cumulativeNotifications + m
+}
+run reportMinorIssue for 3
+
+pred applyBFee(i, i': Invoice, b: BFee) {
+	i'.fees = i.fees + b
+}
+run applyBFee for 3
+
+pred applyADiscount(i, i': Invoice, a: ADiscount) {
+	i'.discounts = i.discounts + a
+}
+run applyADiscount for 3
+
+pred applyCDiscount(i, i': Invoice, c: CDiscount) {
+	i'.discounts = i.discounts + c
+}
+run applyCDiscount for 3
+
+pred showNoNotification {
+	#Ride > 0
+	#Notification = 0
 	#Operator = 0
 	#User > 0
-	#Reservation = 1
-	#Car = 2
-	#SafeParkingArea = 2
-	#SpecialParkingArea = 2
-	#Position > 0
-	#Area > 0
+	#Car > 0
+	#SafeParkingArea > 0
+	#SpecialParkingArea > 0
 }
+run showNoNotification for 3
 
-assert noSameAlmostEmptyBatteryIssues {
-	all c1, c2: Car | c1 != c2 <=> c1.almostEmptyBattery != c2.almostEmptyBattery
+pred showNoReservation {
+	#Reservation = 0
+	#Notification > 0
+	#Operator > 0
+	#User > 0
+	#Car > 0
+	#SafeParkingArea > 0
+	#SpecialParkingArea > 0
 }
-//check noSameAlmostEmptyBatteryIssues
-
-assert noSameRedistributionNeededIssues {
-	all c1, c2: Car | c1 != c2 <=> c1.redistributionNeeded != c2.redistributionNeeded
-}
-//check noSameRedistributionNeededIssues
-
-assert noSameCumulativeNotifications {
-	all c1, c2: Car | c1 != c2 <=> no c1.cumulativeNotifications & c2.cumulativeNotifications
-}
-//check noSameCumulativeNotifications
-
-assert noCarsWithSamePosition {
-	all c1, c2: Car | c1 != c2 <=> c1.position != c2.position
-}
-//check noCarsWithSamePosition
-
-assert noReservationForSameCars {
-	all r1, r2: Reservation | r1 != r2 <=> r1.car != r2.car
-}
-//check noReservationForSameCars
-
-assert noRideIffUserAndCarAtSamePosition {
-	all u: User | (lone r: Reservation | (lone ri: Ride | (r = u.activeReservation and r.car.position = u.position <=> r.ride = ri)))
-}
-//check noRideIffUserAndCarAtSamePosition
-
-/*assert noRedistributionNeededForReservedCar {
-	all r: Reservation | (one c: Car | (r.car = c implies c.redistributionNeeded not in CarRedistributionNeeded))
-}does not work***************************
-check noRedistributionNeededForReservedCar*/
-
-pred show {
-}
-
-run show for 4
+run showNoReservation for 3
